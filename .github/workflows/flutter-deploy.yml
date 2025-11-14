@@ -1,0 +1,101 @@
+name: Deploy Flutter Web to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.2'
+          channel: 'stable'
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build web
+        run: flutter build web --base-href "/Dawning-Harvest-01/" --release --web-renderer canvaskit --dart-define=Dart2jsOptimization=O4
+
+      - name: Verify build files
+        run: |
+          echo "=== Build directory contents ==="
+          ls -la build/web/
+          echo "=== Checking index.html content ==="
+          head -30 build/web/index.html
+          echo "=== Checking if main.dart.js exists ==="
+          ls -la build/web/main.dart.js || echo "main.dart.js NOT FOUND"
+          echo "=== Checking if flutter.js exists ==="
+          ls -la build/web/flutter.js || echo "flutter.js NOT FOUND"
+          echo "=== Checking service worker ==="
+          ls -la build/web/flutter_service_worker.js || echo "service worker NOT FOUND"
+          echo "=== Checking assets directory ==="
+          ls -la build/web/assets/ || echo "assets directory NOT FOUND"
+          echo "=== Checking canvaskit ==="
+          ls -la build/web/canvaskit/ || echo "canvaskit directory NOT FOUND"
+
+      - name: Create deployment directory
+        run: |
+          mkdir -p deploy
+          cp -r build/web/* deploy/
+          echo "=== Deployment directory contents ==="
+          ls -la deploy/
+          echo "=== Checking Flutter index.html ==="
+          head -20 deploy/index.html
+          echo "=== Verifying critical files in deploy ==="
+          ls -la deploy/main.dart.js || echo "main.dart.js MISSING in deploy"
+          ls -la deploy/flutter.js || echo "flutter.js MISSING in deploy"
+          ls -la deploy/flutter_service_worker.js || echo "service worker MISSING in deploy"
+          echo "=== Checking base href in deploy index.html ==="
+          grep -n "base href" deploy/index.html || echo "base href NOT FOUND"
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './deploy'
+
+      - name: Verify artifact contents
+        run: |
+          echo "=== Final verification of uploaded artifact ==="
+          ls -la deploy/
+          echo "=== Checking main.dart.js size ==="
+          ls -lh deploy/main.dart.js
+          echo "=== Checking flutter.js ==="
+          ls -lh deploy/flutter.js
+          echo "=== Checking service worker ==="
+          ls -lh deploy/flutter_service_worker.js
+          echo "=== Base href in index.html ==="
+          grep -n "base href" deploy/index.html
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
