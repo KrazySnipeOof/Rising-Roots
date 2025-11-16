@@ -1,0 +1,11 @@
+crop,stage,start_date,end_date,kc,notes
+Corn,Initial,2025-03-20,2025-04-10,0.45,Emerge to 4 leaves
+Corn,Mid,2025-05-01,2025-07-15,1.20,Tassel to milk
+Corn,Late,2025-07-16,2025-08-20,0.60,Dent to physiological maturity
+Soybean,Initial,2025-04-15,2025-05-05,0.40,Emergence to V2
+Soybean,Mid,2025-06-15,2025-08-10,1.15,Flower to pod fill
+Soybean,Late,2025-08-11,2025-09-05,0.55,Pod yellow to mature
+Cotton,Initial,2025-04-20,2025-05-15,0.35,Plant to squaring
+Cotton,Mid,2025-06-15,2025-08-20,1.15,Flowering to boll fill
+Cotton,Late,2025-08-21,2025-09-25,0.60,Opening to harvest
+

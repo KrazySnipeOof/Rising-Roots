@@ -5,19 +5,19 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="Rising Roots - Regenerative Blueprint Lab">
+  <meta name="description" content="MeteoFlow - Regenerative Blueprint Lab">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- iOS meta tags & icons -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="Rising Roots">
+  <meta name="apple-mobile-web-app-title" content="MeteoFlow">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>Rising Roots - Regenerative Blueprint Lab</title>
+  <title>MeteoFlow - Regenerative Blueprint Lab</title>
   <link rel="manifest" href="manifest.json">
 
   <!-- Loading styles -->
@@ -60,16 +60,21 @@
     }
   </style>
 
+  <!-- Google Maps JS SDK -->
+  <script async defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDYgSmRRiEaGsLgaaFGeRlrWS4mxT1RrZo&libraries=geometry"></script>
+
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js" defer></script>
 </head>
 <body>
-  <div class="loading-container">
-    <div style="font-size: 3rem; margin-bottom: 1rem;">🌱</div>
-    <h1>Rising Roots</h1>
+  <div class="loading-container" id="loading-root">
+    <div style="font-size: 3rem; margin-bottom: 1rem;">🌦️</div>
+    <h1>MeteoFlow</h1>
     <p>Regenerative Blueprint Lab</p>
-    <div class="loading-spinner"></div>
-    <div class="loading-text">Loading Flutter Application...</div>
+    <div class="loading-text" id="loading-text">Initializing...</div>
+    <div class="loading-bar">
+      <div class="loading-bar-fill" id="loading-progress" style="width: 0%;"></div>
+    </div>
     <div class="error-text" id="error-text" style="display: none;"></div>
   </div>
 
@@ -79,16 +84,27 @@
       
       // Use Flutter's automatic initialization for local development
       // This will work for both local development and production builds
+      const root = document.getElementById('loading-root');
+      const progressBar = document.getElementById('loading-progress');
+      const loadingText = document.getElementById('loading-text');
+
+      function updateProgress(value, label) {
+        progressBar.style.width = `${value}%`;
+        loadingText.textContent = label;
+      }
+
+      updateProgress(10, 'Fetching entrypoint...');
+
       _flutter.loader.loadEntrypoint({
         serviceWorker: {
           serviceWorkerVersion: null,
         },
         onEntrypointLoaded: function(engineInitializer) {
-          console.log('Entry point loaded, initializing engine...');
+          updateProgress(50, 'Initializing engine...');
           engineInitializer.initializeEngine().then(function(appRunner) {
-            console.log('Engine initialized, running app...');
-            // Hide loading screen
-            document.querySelector('.loading-container').style.display = 'none';
+            updateProgress(90, 'Bootstrapping widgets...');
+            requestAnimationFrame(() => updateProgress(100, 'Starting MeteoFlow...'));
+            root.style.display = 'none';
             appRunner.runApp();
           }).catch(function(error) {
             console.error('Engine initialization failed:', error);
