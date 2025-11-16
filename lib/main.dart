@@ -401,32 +401,11 @@ class DashboardView extends StatelessWidget {
                 precipTrend: state.precipTrend,
                 windTrend: state.windTrend,
               ),
-              const _SatellitePreviewCard(),
             ],
           ),
           LayoutBuilder(
             builder: (context, constraints) {
               final singleColumn = constraints.maxWidth < 900;
-
-              final ritualsCard = _InsightCard(
-                      title: 'Upcoming field rituals',
-                      child: Column(
-                        children: state.upcomingActions
-                            .map(
-                              (task) => ListTile(
-                                contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                                leading: CircleAvatar(
-                                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                                  child: Icon(task.icon, color: Theme.of(context).colorScheme.primary),
-                                ),
-                                title: Text(task.title),
-                                subtitle: Text('${DateFormat.MMMd().format(task.when)} • ${task.location}'),
-                                trailing: Text(task.owner),
-                              ),
-                            )
-                            .toList(),
-                      ),
-              );
 
               final pulseCard = _InsightCard(
                 title: 'Precipitation (Tuskegee, AL)',
@@ -445,8 +424,6 @@ class DashboardView extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     pulseCard,
-                    const SizedBox(height: 24),
-                    ritualsCard,
                   ],
                 );
               }
@@ -454,9 +431,7 @@ class DashboardView extends StatelessWidget {
               return Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(flex: 2, child: pulseCard),
-                  const SizedBox(width: 24),
-                  Expanded(child: ritualsCard),
+                  Expanded(child: pulseCard),
                 ],
               );
             },
@@ -720,6 +695,25 @@ class _FieldMapViewState extends State<FieldMapView> {
     }
 
     final markers = <Marker>{};
+    // Add a marker label at the centroid of each mapped field showing the crop name.
+    for (final field in state.mappedFields) {
+      if (field.boundary.isEmpty) continue;
+      double lat = 0, lng = 0;
+      for (final p in field.boundary) {
+        lat += p.latitude;
+        lng += p.longitude;
+      }
+      lat /= field.boundary.length;
+      lng /= field.boundary.length;
+      markers.add(
+        Marker(
+          markerId: MarkerId('label_${field.id}'),
+          position: LatLng(lat, lng),
+          infoWindow: InfoWindow(title: field.crop.isNotEmpty ? field.crop : field.name),
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
+        ),
+      );
+    }
     if (_userLocation != null) {
       markers.add(
         Marker(
