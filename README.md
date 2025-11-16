@@ -33,3 +33,8 @@ flutter run -d chrome   # or your preferred device
 - Update `pubspec.yaml` to register additional assets or fonts.
 - Modify `lib/main.dart` to adjust the experimental data, copy, or flows.
 - Web metadata (title, manifest, splash) lives under the `web/` directory.
+
+
+## Live Site
+
+View the live application at: [https://krazysnipeoof.github.io/Rising-Roots/](https://krazysnipeoof.github.io/Rising-Roots/)
