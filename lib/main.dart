@@ -18,6 +18,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'services/et_calculator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 // ignore: avoid_web_libraries_in_flutter
 import 'dart:html' as html;
 import 'dart:ui' as ui;
@@ -213,6 +214,10 @@ class _RisingRootsHomeState extends State<RisingRootsHome> {
         runner: () => state.primeWeatherModels(),
       ),
       _BootstrapTask(
+        label: 'Fetching local forecast',
+        runner: () => state.refreshWeather(),
+      ),
+      _BootstrapTask(
         label: 'Resolving map location',
         runner: () => state.updateCityLabel(state.mapAnchor),
       ),
@@ -396,9 +401,9 @@ class DashboardView extends StatelessWidget {
                 precipTrend: state.precipTrend,
                 windTrend: state.windTrend,
               ),
+              const _SatellitePreviewCard(),
             ],
           ),
-          const SizedBox(height: 24),
           LayoutBuilder(
             builder: (context, constraints) {
               final singleColumn = constraints.maxWidth < 900;
@@ -424,14 +429,14 @@ class DashboardView extends StatelessWidget {
               );
 
               final pulseCard = _InsightCard(
-                title: 'Soil vitality pulse',
+                title: 'Precipitation (Tuskegee, AL)',
                 trailing: IconButton(
                   icon: const Icon(Icons.refresh_rounded),
-                  onPressed: state.regeneratePulse,
+                  onPressed: () => context.read<RegenerativeState>().refreshWeather(),
                 ),
                 child: SizedBox(
                   height: 260,
-                  child: SoilPulseChart(readings: state.soilReadings),
+                  child: PrecipChart(days: state.forecast, units: state.units),
                 ),
               );
 
@@ -1309,7 +1314,7 @@ class _WeatherPageState extends State<WeatherPage> {
                   ),
                   ButtonSegment(
                     value: WeatherSource.nasaPower,
-                    label: Text('NASA POWER'),
+                    label: Text('NASA POWER (observed)'),
                   ),
                 ],
                 selected: {appState.weatherSource},
@@ -1318,6 +1323,12 @@ class _WeatherPageState extends State<WeatherPage> {
                   final target = set.first;
                   context.read<RegenerativeState>().setWeatherSource(target);
                 },
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Note: NASA POWER shows recent observed daily aggregates at coarse resolution; '
+                'Metostat provides local forecast. NASA dates use the last 7 fully completed UTC days.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.black54),
               ),
               const SizedBox(height: 12),
               if (appState.isWeatherLoading)
@@ -1473,7 +1484,7 @@ class _WeatherPageState extends State<WeatherPage> {
                       ),
                     ],
           ),
-          const SizedBox(height: 12),
+                        const SizedBox(height: 12),
                   Row(
                     children: [
                       Expanded(
@@ -1794,9 +1805,9 @@ class _PlantingScheduleContentState extends State<_PlantingScheduleContent> {
                         final stage = first['planting_stage'] ?? first['stage'] ?? '';
                         return DropdownMenuItem(
                           value: c,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
                               Text(c, style: const TextStyle(fontWeight: FontWeight.w600)),
                               if (start.isNotEmpty || stage.isNotEmpty)
                                 Text(
@@ -1868,8 +1879,8 @@ class _PlantingScheduleContentState extends State<_PlantingScheduleContent> {
                               ),
                             ),
                           ],
-                        ),
-                        const SizedBox(height: 12),
+          ),
+          const SizedBox(height: 12),
                         Wrap(
                           spacing: 16,
                           runSpacing: 10,
@@ -2276,9 +2287,9 @@ class ReportsPage extends StatelessWidget {
               onPressed: () {},
               icon: const Icon(Icons.analytics_outlined),
               label: const Text('Open seasonal report'),
+                ),
+              ),
             ),
-          ),
-        ),
         _ModuleCard(
           title: 'Export center',
           description: 'PDF, CSV, or API push to partner systems.',
@@ -2294,9 +2305,9 @@ class ReportsPage extends StatelessWidget {
                 onPressed: () {},
                 icon: const Icon(Icons.table_view_outlined),
                 label: const Text('Export CSV'),
-              ),
-            ],
           ),
+        ],
+      ),
         ),
       ],
     );
@@ -2432,11 +2443,11 @@ class _SettingsPageState extends State<SettingsPage> {
           description: 'Manage API keys for Metostat, NASA POWER, and AI.',
           child: Column(
             children: _services
-                .map(
+        .map(
                   (service) {
                     final controller = _controllerFor(service, apiKeys[service] ?? '');
                     final label = service == 'AI' ? 'AI API key' : '$service API key';
-                    return Padding(
+    return Padding(
                       padding: const EdgeInsets.only(bottom: 16),
                       child: TextField(
                         controller: controller,
@@ -2463,9 +2474,9 @@ class _SettingsPageState extends State<SettingsPage> {
           elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
           child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Theme', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
@@ -2656,33 +2667,46 @@ class _MappedFieldsOverview extends StatelessWidget {
   }
 }
 
-class SoilPulseChart extends StatelessWidget {
-  const SoilPulseChart({super.key, required this.readings});
+class PrecipChart extends StatelessWidget {
+  const PrecipChart({super.key, required this.days, required this.units});
 
-  final List<SoilHealthReading> readings;
+  final List<ForecastDay> days;
+  final Units units;
 
   @override
   Widget build(BuildContext context) {
-    final spots = readings
-        .map(
-          (reading) => FlSpot(
-            reading.date.month + (reading.date.day / 31),
-            reading.organicMatter,
-          ),
-        )
-        .toList();
+    if (days.isEmpty) {
+      return const Center(child: Text('No precipitation data loaded.'));
+    }
+    final values = days.map((d) => d.rainMm).toList();
+    final maxMm = values.fold<double>(0, (m, v) => v > m ? v : m);
+    final maxY = (maxMm * (units == Units.metric ? 1 : 1 / 25.4)).clamp(0.0, double.infinity);
+    final spots = <FlSpot>[];
+    for (var i = 0; i < days.length; i++) {
+      final mm = days[i].rainMm;
+      final yRaw = units == Units.metric ? mm : mm / 25.4;
+      final y = yRaw < 0 ? 0.0 : yRaw;
+      spots.add(FlSpot(i.toDouble(), y));
+    }
+
+    String leftLabel(double v) {
+      if (units == Units.metric) {
+        return '${v.toStringAsFixed(1)} mm';
+      }
+      return '${v.toStringAsFixed(2)}"';
+    }
 
     return LineChart(
       LineChartData(
-        minY: 2,
-        maxY: 8,
+        minY: 0,
+        maxY: (maxY == 0 ? 1.0 : maxY) * 1.2,
         gridData: const FlGridData(show: true, drawVerticalLine: false),
         titlesData: FlTitlesData(
           leftTitles: AxisTitles(
             sideTitles: SideTitles(
-              reservedSize: 44,
+              reservedSize: 56,
               showTitles: true,
-              getTitlesWidget: (value, _) => Text('${value.toStringAsFixed(1)}%'),
+              getTitlesWidget: (value, _) => Text(leftLabel(value)),
             ),
           ),
           bottomTitles: AxisTitles(
@@ -2690,8 +2714,8 @@ class SoilPulseChart extends StatelessWidget {
               showTitles: true,
               reservedSize: 36,
               getTitlesWidget: (value, _) {
-                final monthIndex = value.clamp(1, 12).round();
-                final label = DateFormat.MMM().format(DateTime(2000, monthIndex));
+                final idx = value.clamp(0, days.length - 1).round();
+                final label = DateFormat.E().format(days[idx].date);
                 return Text(label, style: const TextStyle(fontSize: 12));
               },
             ),
@@ -2703,7 +2727,7 @@ class SoilPulseChart extends StatelessWidget {
           LineChartBarData(
             spots: spots,
             isCurved: true,
-            barWidth: 4,
+            barWidth: 3,
             color: Theme.of(context).colorScheme.primary,
             belowBarData: BarAreaData(
               show: true,
@@ -2765,49 +2789,67 @@ class _SidebarNav extends StatelessWidget {
       ),
       child: Scrollbar(
         thumbVisibility: true,
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 12),
-          itemCount: sections.length,
-          itemBuilder: (context, index) {
-            final section = sections[index];
-            final globalIndex = sectionIndices[index];
-            final isSelected = globalIndex == selectedIndex;
-            final bgColor = isSelected ? colorScheme.primary.withOpacity(0.12) : Colors.transparent;
-            final iconColor = isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant;
-            final textColor = isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant;
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(20),
-                onTap: () => onSelected(globalIndex),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
-                  decoration: BoxDecoration(
-                    color: bgColor,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Column(
-        children: [
-                      Icon(section.icon, color: iconColor),
-                      const SizedBox(height: 6),
-                      Text(
-                        section.label,
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.2,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                          color: textColor,
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 12),
+                itemCount: sections.length,
+                itemBuilder: (context, index) {
+                  final section = sections[index];
+                  final globalIndex = sectionIndices[index];
+                  final isSelected = globalIndex == selectedIndex;
+                  final bgColor = isSelected ? colorScheme.primary.withOpacity(0.12) : Colors.transparent;
+                  final iconColor = isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant;
+                  final textColor = isSelected ? colorScheme.primary : colorScheme.onSurfaceVariant;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap: () => onSelected(globalIndex),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 6),
+                        decoration: BoxDecoration(
+                          color: bgColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(section.icon, color: iconColor),
+                            const SizedBox(height: 6),
+                            Text(
+                              section.label,
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                height: 1.2,
+                                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                color: textColor,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-        ],
-                  ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+              child: OutlinedButton.icon(
+                onPressed: () {},
+                icon: const Icon(Icons.add),
+                label: const Text('New'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(40),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
               ),
-            );
-          },
+            ),
+          ],
         ),
       ),
     );
@@ -3303,10 +3345,76 @@ class _InsightCard extends StatelessWidget {
   }
 }
 
+class _SatellitePreviewCard extends StatelessWidget {
+  const _SatellitePreviewCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final previewUrl = context.watch<RegenerativeState>().satellitePreviewUrl;
+    // Compact preview size so it fits neatly beside the Field climate brief panel.
+    const maxWidth = 420.0;
+    return Card(
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SatelliteImageryPage()),
+          );
+        },
+        child: SizedBox(
+          width: maxWidth,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+                child: Row(
+            children: [
+                    Icon(Icons.satellite_alt_rounded, color: colorScheme.primary),
+                    const SizedBox(width: 8),
+                    const Text('Satellite snapshot', style: TextStyle(fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: previewUrl != null
+                        ? Image.network(previewUrl, fit: BoxFit.cover)
+                        : Container(
+                            color: colorScheme.surfaceContainerHighest,
+                            alignment: Alignment.center,
+                            child: const Icon(Icons.image_not_supported_outlined),
+                          ),
+                  ),
+                ),
+              ),
+          const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
+                child: Text(
+                  'Tap to open the Satellite imagery page',
+                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 Widget _miniMetric(String label, String value) {
   return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+            children: [
       Text(label, style: const TextStyle(color: Colors.black54)),
       const SizedBox(height: 4),
       Text(
@@ -3542,6 +3650,8 @@ class RegenerativeState extends ChangeNotifier {
   String _languageCode = 'en';
   bool _notificationsEnabled = true;
   String _notificationTime = '07:00';
+  String? _satellitePreviewUrl =
+      'https://staticmap.openstreetmap.de/staticmap.php?center=32.4296,-85.7073&zoom=7&size=720x540&maptype=mapnik';
   WeatherSource _weatherSource = WeatherSource.nasaPower;
   bool _weatherLoading = false;
   String? _weatherError;
@@ -3634,38 +3744,38 @@ class RegenerativeState extends ChangeNotifier {
   final List<MappedField> _mappedFields = [
     const MappedField(
       id: 'north-ridge',
-      name: 'North Ridge Guild',
-      crop: 'Agroforestry swales',
+      name: 'Soybean',
+      crop: 'Soybean',
       color: Color(0xFF2563EB),
       boundary: [
-        LatLng(37.4226, -122.0853),
-        LatLng(37.4228, -122.0840),
-        LatLng(37.4219, -122.0838),
-        LatLng(37.4217, -122.0849),
+        LatLng(32.4310, -85.7085),
+        LatLng(32.4312, -85.7068),
+        LatLng(32.4302, -85.7066),
+        LatLng(32.4300, -85.7080),
       ],
     ),
     const MappedField(
       id: 'biochar-terrace',
-      name: 'Biochar Terrace',
-      crop: 'Carbon maize rotation',
+      name: 'Corn',
+      crop: 'Corn',
       color: Color(0xFF38BDF8),
       boundary: [
-        LatLng(37.4215, -122.0858),
-        LatLng(37.4219, -122.0846),
-        LatLng(37.4210, -122.0844),
-        LatLng(37.4209, -122.0856),
+        LatLng(32.4288, -85.7092),
+        LatLng(32.4291, -85.7079),
+        LatLng(32.4281, -85.7077),
+        LatLng(32.4279, -85.7090),
       ],
     ),
     const MappedField(
       id: 'wetland-braid',
-      name: 'Wetland Braid',
-      crop: 'Mycelial reed bed',
+      name: 'Cotton',
+      crop: 'Cotton',
       color: Color(0xFF4ADE80),
       boundary: [
-        LatLng(37.4207, -122.0848),
-        LatLng(37.4209, -122.0837),
-        LatLng(37.4201, -122.0835),
-        LatLng(37.4199, -122.0846),
+        LatLng(32.4305, -85.7098),
+        LatLng(32.4307, -85.7086),
+        LatLng(32.4298, -85.7084),
+        LatLng(32.4296, -85.7096),
       ],
     ),
   ];
@@ -3679,7 +3789,7 @@ class RegenerativeState extends ChangeNotifier {
     const Color(0xFFA855F7),
   ];
   int _fieldColorCursor = 0;
-  LatLng _mapAnchor = const LatLng(37.4217, -122.0849);
+  LatLng _mapAnchor = const LatLng(32.4296, -85.7073); // Tuskegee University, AL
 
   final List<NetworkThread> _threads = [
     NetworkThread(
@@ -3769,6 +3879,7 @@ class RegenerativeState extends ChangeNotifier {
   String get languageCode => _languageCode;
   bool get notificationsEnabled => _notificationsEnabled;
   String get notificationTime => _notificationTime;
+  String? get satellitePreviewUrl => _satellitePreviewUrl;
   String get cityStateLabel => _cityStateLabel;
   String? get countyNameResolved => _countyNameReal;
   String? get stateNameResolved => _stateNameReal;
@@ -4030,8 +4141,7 @@ class RegenerativeState extends ChangeNotifier {
   DiscussionGroup _buildDiscussionGroup(DiscussionScope scope) {
     final label = _scopeTitle(scope);
     final subtitle = _scopeSubtitle(scope);
-    final origin = _scopeOrigin(scope);
-    final base = _threadsForScope(origin);
+    final base = _seedThreadsForScope(scope);
     final custom = _customThreads[scope]!;
     return DiscussionGroup(
       title: label,
@@ -4040,18 +4150,106 @@ class RegenerativeState extends ChangeNotifier {
     );
   }
 
-  List<NetworkThread> _threadsForScope(String scopeLabel) {
-    return _threads
-        .map(
-          (thread) => NetworkThread(
-            title: thread.title,
-            origin: scopeLabel,
-            summary: thread.summary,
-            replies: thread.replies,
-            recencyLabel: thread.recencyLabel,
+  List<NetworkThread> _seedThreadsForScope(DiscussionScope scope) {
+    final origin = _scopeOrigin(scope);
+    switch (scope) {
+      case DiscussionScope.county:
+        return [
+          NetworkThread(
+            title: 'Cover crop mixes that survived last freeze?',
+            origin: origin,
+            summary: 'Share your blends and seeding rates for Macon County plots.',
+            replies: 12,
+            recencyLabel: '8m ago',
           ),
-        )
-        .toList();
+          NetworkThread(
+            title: 'Irrigation timing after 0.3" rainfall',
+            origin: origin,
+            summary: 'How long did you delay pivots on sandy fields this week?',
+            replies: 21,
+            recencyLabel: '35m ago',
+          ),
+          NetworkThread(
+            title: 'Best local supplier for drip tape repairs',
+            origin: origin,
+            summary: 'Looking for next‑day pickup near Tuskegee.',
+            replies: 6,
+            recencyLabel: '2h ago',
+          ),
+        ];
+      case DiscussionScope.state:
+        return [
+          NetworkThread(
+            title: 'Alabama corn earworm pressure 2025',
+            origin: origin,
+            summary: 'Scouting notes and thresholds across central AL.',
+            replies: 33,
+            recencyLabel: '1h ago',
+          ),
+          NetworkThread(
+            title: 'Buying group for fuel and fertilizers',
+            origin: origin,
+            summary: 'Statewide cooperative pricing interest check.',
+            replies: 18,
+            recencyLabel: '3h ago',
+          ),
+          NetworkThread(
+            title: 'Soil lab recommendations: Auburn vs private labs',
+            origin: origin,
+            summary: 'Turnaround time and accuracy feedback.',
+            replies: 9,
+            recencyLabel: '5h ago',
+          ),
+        ];
+      case DiscussionScope.region:
+        return [
+          NetworkThread(
+            title: 'Southeast drought outlook and forage plans',
+            origin: origin,
+            summary: 'Adjusting grazing and hay cutting schedules.',
+            replies: 27,
+            recencyLabel: '42m ago',
+          ),
+          NetworkThread(
+            title: 'Cotton defoliation strategies in humid weeks',
+            origin: origin,
+            summary: 'Rates, timing, and weather windows.',
+            replies: 11,
+            recencyLabel: '2h ago',
+          ),
+          NetworkThread(
+            title: 'Peanut disease triangle: what’s working this season?',
+            origin: origin,
+            summary: 'Fungicide rotations and varieties.',
+            replies: 22,
+            recencyLabel: '6h ago',
+          ),
+        ];
+      case DiscussionScope.global:
+        return [
+          NetworkThread(
+            title: 'Best practices for Sentinel‑2 cloud masking',
+            origin: origin,
+            summary: 'Share code snippets and QA tips for ag fields.',
+            replies: 54,
+            recencyLabel: '10m ago',
+          ),
+          NetworkThread(
+            title: 'Open‑source tools for ET₀ and irrigation analytics',
+            origin: origin,
+            summary: 'Comparing FAO‑56 implementations and calibration methods.',
+            replies: 39,
+            recencyLabel: '1h ago',
+          ),
+          NetworkThread(
+            title: 'Carbon programs: verification timelines worldwide',
+            origin: origin,
+            summary: 'Experiences from US/EU/AU producers.',
+            replies: 25,
+            recencyLabel: '4h ago',
+          ),
+        ];
+    }
   }
 
   String get countyName {
@@ -4391,9 +4589,10 @@ class RegenerativeState extends ChangeNotifier {
   }
 
   Future<List<ForecastDay>> _loadFromNasaPower(LatLng anchor) async {
-    final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day).subtract(const Duration(days: 6));
-    final end = DateTime(now.year, now.month, now.day);
+    // Use the last 7 fully completed UTC days to avoid partial-day/off-by-one shifts.
+    final utcToday = DateTime.now().toUtc();
+    final end = DateTime.utc(utcToday.year, utcToday.month, utcToday.day).subtract(const Duration(days: 1));
+    final start = end.subtract(const Duration(days: 6));
     final params = [
       'T2M_MIN',
       'T2M_MAX',
@@ -4551,12 +4750,21 @@ extension Preferences on RegenerativeState {
       await prefs.setString('pref_language', _languageCode);
       await prefs.setBool('pref_notifications', _notificationsEnabled);
       await prefs.setString('pref_notification_time', _notificationTime);
+      if (_satellitePreviewUrl != null) {
+        await prefs.setString('pref_sat_preview', _satellitePreviewUrl!);
+      }
     } catch (_) {}
   }
 
   void setThemeMode(ThemeMode mode) {
     if (_themeMode == mode) return;
     _themeMode = mode;
+    _savePreferences();
+    notifyListeners();
+  }
+
+  void setSatellitePreviewUrl(String url) {
+    _satellitePreviewUrl = url.trim().isEmpty ? null : url.trim();
     _savePreferences();
     notifyListeners();
   }
